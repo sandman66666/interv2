@@ -1,0 +1,19 @@
+{
+    "questions": [
+      {
+        "id": 1,
+        "text": "Hello! I am udi hamudi AI avatar assistant. I'm here to tell you that artificial intelligence is transforming how we interact with technology.",
+        "duration": 8000
+      },
+      {
+        "id": 2,
+        "text": "Today, I'll demonstrate how AI can create natural conversations and engage with users in meaningful ways.",
+        "duration": 6000
+      },
+      {
+        "id": 3,
+        "text": "Would you like to learn more about how AI avatars like me can help businesses connect with their audience?",
+        "duration": 7000
+      }
+    ]
+  }

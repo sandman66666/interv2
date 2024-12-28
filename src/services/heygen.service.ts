@@ -17,81 +17,166 @@ import StreamingAvatar, {
     private avatar: StreamingAvatar | null = null;
     private stream: MediaStream | null = null;
     private sessionData: StartAvatarResponse | null = null;
+    private isSpeaking: boolean = false;
+    private isCleaningUp: boolean = false;
+    private streamReadyResolver: ((stream: MediaStream) => void) | null = null;
   
-    constructor(private config: HeygenServiceConfig) {}
+    constructor(private config: HeygenServiceConfig) {
+      if (!config.apiKey) {
+        throw new Error('API key is required');
+      }
+      console.log('HeygenService initialized');
+    }
   
-    // Initialize the avatar session
+    private async getAccessToken(): Promise<string> {
+      try {
+        console.log('Getting access token from Heygen API...');
+        const response = await fetch('https://api.heygen.com/v1/streaming.create_token', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Api-Key': this.config.apiKey
+          },
+        });
+        
+        const responseText = await response.text();
+        console.log('Raw API response:', responseText);
+  
+        if (!response.ok) {
+          throw new Error(`Failed to get access token: ${responseText}`);
+        }
+  
+        const data = JSON.parse(responseText);
+        if (!data.data?.token) {
+          throw new Error('Token missing from response');
+        }
+  
+        console.log('Successfully received access token');
+        return data.data.token;
+      } catch (error) {
+        console.error('Error getting access token:', error);
+        throw error;
+      }
+    }
+  
     async initialize(): Promise<MediaStream> {
       try {
-        // Create new StreamingAvatar instance
+        const accessToken = await this.getAccessToken();
+        console.log('Access token received, initializing avatar...');
+  
         this.avatar = new StreamingAvatar({
-          token: this.config.apiKey
+          token: accessToken
         });
   
-        // Set up event listeners
+        // Set up event listeners first
         this.setupEventListeners();
   
-        // Start the avatar session
+        // Create a promise for the stream ready event
+        const streamReadyPromise = new Promise<MediaStream>((resolve, reject) => {
+          this.streamReadyResolver = resolve;
+          setTimeout(() => {
+            this.streamReadyResolver = null;
+            reject(new Error('Stream ready timeout after 20 seconds'));
+          }, 20000);
+        });
+  
+        // Start avatar session
+        console.log('Creating avatar session...');
         const response = await this.avatar.createStartAvatar({
           quality: this.config.quality || AvatarQuality.Low,
-          avatarName: this.config.avatarId || "Anna_public_3_20240108", // Default avatar if none specified
+          avatarName: this.config.avatarId || "Anna_public_3_20240108",
           voice: {
             rate: 1.5,
-            emotion: VoiceEmotion.NEUTRAL
+            emotion: VoiceEmotion.EXCITED
           },
           language: this.config.language || "en",
           disableIdleTimeout: true
         });
   
+        console.log('Avatar session created successfully');
         this.sessionData = response;
   
-        // Wait for stream to be ready
-        const stream = await this.waitForStream();
+        // Wait for stream
+        console.log('Waiting for stream...');
+        const stream = await streamReadyPromise;
         this.stream = stream;
+        console.log('Stream received and ready');
   
         return stream;
-  
       } catch (error) {
-        throw new Error(`Failed to initialize Heygen avatar: ${error}`);
+        console.error('Error during initialization:', error);
+        await this.cleanup();
+        throw error;
       }
     }
   
-    // Speak text through the avatar
     async speak(text: string): Promise<void> {
       if (!this.avatar || !this.sessionData) {
         throw new Error('Avatar not initialized. Call initialize() first.');
       }
   
+      if (this.isSpeaking) {
+        console.log('Already speaking, waiting...');
+        await new Promise<void>(resolve => {
+          const checkInterval = setInterval(() => {
+            if (!this.isSpeaking) {
+              clearInterval(checkInterval);
+              resolve();
+            }
+          }, 100);
+        });
+      }
+  
       try {
+        this.isSpeaking = true;
+        console.log('Starting to speak:', text);
         await this.avatar.speak({ 
           text,
           taskType: TaskType.REPEAT
         });
+  
+        return new Promise<void>((resolve) => {
+          const checkInterval = setInterval(() => {
+            if (!this.isSpeaking) {
+              clearInterval(checkInterval);
+              resolve();
+            }
+          }, 100);
+        });
       } catch (error) {
-        throw new Error(`Failed to speak text: ${error}`);
+        this.isSpeaking = false;
+        console.error('Speech failed:', error);
+        throw error;
       }
     }
   
-    // Stop the current speaking task
-    async interrupt(): Promise<void> {
-      if (!this.avatar) {
+    async cleanup(): Promise<void> {
+      if (this.isCleaningUp) {
+        console.log('Cleanup already in progress');
         return;
       }
   
-      try {
-        await this.avatar.interrupt();
-      } catch (error) {
-        throw new Error(`Failed to interrupt avatar: ${error}`);
-      }
-    }
+      this.isCleaningUp = true;
   
-    // End the avatar session
-    async cleanup(): Promise<void> {
-      if (this.avatar) {
-        await this.avatar.stopAvatar();
-        this.avatar = null;
-        this.stream = null;
-        this.sessionData = null;
+      try {
+        if (this.avatar) {
+          console.log('Starting cleanup...');
+          if (this.isSpeaking) {
+            await this.avatar.interrupt();
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
+          await this.avatar.stopAvatar();
+          this.avatar = null;
+          this.stream = null;
+          this.sessionData = null;
+          this.streamReadyResolver = null;
+          console.log('Cleanup completed successfully');
+        }
+      } catch (error) {
+        console.error('Cleanup error:', error);
+      } finally {
+        this.isCleaningUp = false;
+        this.isSpeaking = false;
       }
     }
   
@@ -100,55 +185,25 @@ import StreamingAvatar, {
   
       this.avatar.on(StreamingEvents.AVATAR_START_TALKING, () => {
         console.log('Avatar started talking');
+        this.isSpeaking = true;
       });
   
       this.avatar.on(StreamingEvents.AVATAR_STOP_TALKING, () => {
         console.log('Avatar stopped talking');
+        this.isSpeaking = false;
       });
   
       this.avatar.on(StreamingEvents.STREAM_DISCONNECTED, () => {
         console.log('Stream disconnected');
         this.cleanup();
       });
-    }
   
-    private waitForStream(): Promise<MediaStream> {
-      return new Promise((resolve, reject) => {
-        if (!this.avatar) {
-          reject(new Error('Avatar not initialized'));
-          return;
+      this.avatar.on(StreamingEvents.STREAM_READY, (event) => {
+        console.log('Stream ready event received');
+        if (this.streamReadyResolver && event.detail instanceof MediaStream) {
+          this.streamReadyResolver(event.detail);
+          this.streamReadyResolver = null;
         }
-  
-        const timeout = setTimeout(() => {
-          reject(new Error('Stream ready timeout'));
-        }, 10000);
-  
-        this.avatar.on(StreamingEvents.STREAM_READY, (event) => {
-          clearTimeout(timeout);
-          resolve(event.detail);
-        });
       });
     }
   }
-  
-  // Usage example:
-  /*
-  const heygenService = new HeygenService({
-    apiKey: 'your-api-key',
-    avatarId: 'optional-avatar-id',
-    quality: AvatarQuality.Low,
-    language: 'en'
-  });
-  
-  // Initialize and get video stream
-  const stream = await heygenService.initialize();
-  
-  // Attach stream to video element
-  videoElement.srcObject = stream;
-  
-  // Make avatar speak
-  await heygenService.speak('Hello world!');
-  
-  // Clean up when done
-  await heygenService.cleanup();
-  */

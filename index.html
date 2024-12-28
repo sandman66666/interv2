@@ -4,9 +4,135 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Heygen Avatar Demo</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            background-color: #f0f0f0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+        }
+
+        #video-container {
+            width: 640px;
+            height: 480px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+            margin-bottom: 20px;
+            position: relative;
+        }
+
+        #avatar-video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        #controls {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 10px;
+        }
+
+        .control-button {
+            padding: 12px 24px;
+            font-size: 18px;
+            background-color: #2563eb;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .control-button:hover:not(:disabled) {
+            background-color: #1d4ed8;
+        }
+
+        .control-button:disabled {
+            background-color: #93c5fd;
+            cursor: not-allowed;
+        }
+
+        #start-button {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        #next-button {
+            display: none;
+        }
+
+        #debug-panel {
+            width: 640px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+            margin-top: 20px;
+        }
+
+        #debug-log {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: monospace;
+            white-space: pre-wrap;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .error {
+            color: #dc2626;
+        }
+
+        .info {
+            color: #2563eb;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .loading::after {
+            content: '';
+            width: 20px;
+            height: 20px;
+            margin-left: 10px;
+            display: inline-block;
+            border: 2px solid transparent;
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+    </style>
 </head>
 <body>
-    <video id="avatar-video" autoplay playsinline></video>
-    <script src="dist/index.js"></script>
+    <div id="video-container">
+        <video id="avatar-video" autoplay playsinline></video>
+        <button id="start-button" class="control-button">Start Avatar</button>
+        <div id="controls">
+            <button id="next-button" class="control-button">Next Question</button>
+        </div>
+    </div>
+    <div id="debug-panel">
+        <h3>Debug Log</h3>
+        <div id="debug-log"></div>
+    </div>
+    <script src="/dist/bundle.js"></script>
 </body>
 </html>
