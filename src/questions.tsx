@@ -15,6 +15,22 @@ interface Question {
 const QuestionEditor = () => {
   const [questions, setQuestions] = useState<Question[]>(questionsData.questions);
   const [saveStatus, setSaveStatus] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const loadQuestions = async () => {
+    try {
+      const response = await fetch('/load-questions');
+      if (!response.ok) throw new Error('Failed to load questions');
+      const data = await response.json();
+      setQuestions(data.questions);
+    } catch (error) {
+      console.error('Error loading questions:', error);
+    }
+  };
+
+  useEffect(() => {
+    loadQuestions();
+  }, []);
 
   const addQuestion = () => {
     const newQuestion: Question = {
@@ -45,16 +61,31 @@ const QuestionEditor = () => {
 
   const saveQuestions = async () => {
     try {
+      setSaving(true);
       setSaveStatus('Saving...');
-      const data = { questions: [...questions].sort((a, b) => a.id - b.id) };
-      const jsonContent = JSON.stringify(data, null, 2);
-      console.log('Saving content:', jsonContent);
-      await window.fs.writeFile('./src/questions.json', jsonContent);
+      const sortedQuestions = [...questions].sort((a, b) => a.id - b.id);
+      console.log('Saving content:', { questions: sortedQuestions });
+
+      const response = await fetch('/save-questions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          questions: sortedQuestions
+        })
+      });
+
+      if (!response.ok) throw new Error('Failed to save questions');
+
       setSaveStatus('✓ Saved successfully!');
-      setTimeout(() => setSaveStatus(''), 3000);
+      console.log('Questions saved successfully');
+      await loadQuestions(); // Reload to verify save
     } catch (error) {
       console.error('Error saving questions:', error);
       setSaveStatus('❌ Error saving questions');
+    } finally {
+      setSaving(false);
       setTimeout(() => setSaveStatus(''), 3000);
     }
   };
@@ -75,10 +106,15 @@ const QuestionEditor = () => {
               </a>
               <button
                 onClick={saveQuestions}
-                className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors flex items-center gap-2"
+                disabled={saving}
+                className={`px-6 py-2 rounded-md transition-colors flex items-center gap-2 ${
+                  saving 
+                    ? 'bg-gray-400 text-white cursor-not-allowed'
+                    : 'bg-blue-600 text-white hover:bg-blue-700'
+                }`}
               >
                 <Save className="w-5 h-5" />
-                Save Changes
+                {saving ? 'Saving...' : 'Save Changes'}
               </button>
             </div>
           </div>

@@ -1,5 +1,3 @@
-// src/components/RecordingControls.ts
-
 export class RecordingControls {
     private isRecording: boolean = false;
     private isPreviewingRecording: boolean = false;
@@ -7,15 +5,63 @@ export class RecordingControls {
     private recordedChunks: Blob[] = [];
     private stream: MediaStream | null = null;
     private lastRecordingBlob: Blob | null = null;
+    private currentDeviceId: string | null = null;
 
     constructor() {
-        this.initializeUserVideo();
+        this.initializeDeviceSelector();
+    }
+
+    private async initializeDeviceSelector() {
+        try {
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            const videoDevices = devices.filter(device => device.kind === 'videoinput');
+            
+            // Create select element for camera selection
+            const select = document.createElement('select');
+            select.className = 'absolute top-4 right-4 px-3 py-2 bg-white border rounded-lg shadow-sm z-10';
+            videoDevices.forEach(device => {
+                const option = document.createElement('option');
+                option.value = device.deviceId;
+                option.text = device.label || `Camera ${device.deviceId.slice(0, 5)}...`;
+                select.appendChild(option);
+            });
+
+            // Add to user video container
+            const userVideo = document.querySelector('.user-wrapper');
+            if (userVideo) {
+                userVideo.appendChild(select);
+            }
+
+            // Handle camera change
+            select.addEventListener('change', (e) => {
+                const target = e.target as HTMLSelectElement;
+                this.currentDeviceId = target.value;
+                this.initializeUserVideo();
+            });
+
+            // Initialize with first device
+            if (videoDevices.length > 0) {
+                this.currentDeviceId = videoDevices[0].deviceId;
+                await this.initializeUserVideo();
+            }
+        } catch (error) {
+            console.error('Failed to enumerate devices:', error);
+        }
     }
 
     public async initializeUserVideo(): Promise<void> {
         try {
+            // Stop any existing stream
+            if (this.stream) {
+                this.stream.getTracks().forEach(track => track.stop());
+            }
+
             this.stream = await navigator.mediaDevices.getUserMedia({
-                video: true,
+                video: this.currentDeviceId ? {
+                    deviceId: { exact: this.currentDeviceId },
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 }
+                } : true,
                 audio: {
                     echoCancellation: true,
                     noiseSuppression: true,
@@ -26,7 +72,7 @@ export class RecordingControls {
             const userVideo = document.getElementById('user-video') as HTMLVideoElement;
             if (userVideo) {
                 userVideo.srcObject = this.stream;
-                userVideo.muted = true; // Mute to prevent feedback, but still record audio
+                userVideo.muted = true;
             }
         } catch (error) {
             console.error('Failed to initialize user video:', error);
@@ -65,7 +111,6 @@ export class RecordingControls {
                     recordButton.classList.remove('recording');
                     recordButton.classList.add('hidden');
                     
-                    // Show preview option
                     previewButton.classList.remove('hidden');
                     reRecordButton.classList.remove('hidden');
                     confirmButton.classList.remove('hidden');
@@ -78,16 +123,15 @@ export class RecordingControls {
                     const recordingUrl = URL.createObjectURL(this.lastRecordingBlob);
                     userVideo.srcObject = null;
                     userVideo.src = recordingUrl;
-                    userVideo.muted = false; // Unmute for preview
+                    userVideo.muted = false;
                     userVideo.play();
                     this.isPreviewingRecording = true;
                     previewOverlay.classList.remove('active');
                     
-                    // Reset to live view when preview ends
                     userVideo.onended = () => {
                         if (this.stream) {
                             userVideo.srcObject = this.stream;
-                            userVideo.muted = true; // Mute again for live view
+                            userVideo.muted = true;
                             previewOverlay.classList.add('active');
                         }
                     };
@@ -95,18 +139,15 @@ export class RecordingControls {
             });
 
             reRecordButton.addEventListener('click', async () => {
-                // Reset to live camera view
                 if (this.stream) {
                     userVideo.srcObject = this.stream;
                     userVideo.muted = true;
                     previewOverlay.classList.remove('active');
                 }
                 
-                // Reset recording state
                 this.lastRecordingBlob = null;
                 this.isPreviewingRecording = false;
                 
-                // Show record button, hide others
                 recordButton.classList.remove('hidden');
                 previewButton.classList.add('hidden');
                 reRecordButton.classList.add('hidden');
@@ -114,17 +155,14 @@ export class RecordingControls {
             });
 
             confirmButton.addEventListener('click', () => {
-                // Hide review controls
                 previewButton.classList.add('hidden');
                 reRecordButton.classList.add('hidden');
                 confirmButton.classList.add('hidden');
                 previewOverlay.classList.remove('active');
                 
-                // Show next button
                 nextButton.classList.remove('hidden');
                 nextButton.disabled = false;
                 
-                // Reset to live camera view
                 if (this.stream) {
                     userVideo.srcObject = this.stream;
                     userVideo.muted = true;
@@ -135,25 +173,11 @@ export class RecordingControls {
 
     private async startRecording(): Promise<void> {
         try {
-            // Get both video and audio streams
-            const stream = await navigator.mediaDevices.getUserMedia({
-                video: true,
-                audio: {
-                    echoCancellation: true,
-                    noiseSuppression: true,
-                    sampleRate: 44100
-                }
-            });
-
-            // Update the video preview with the new stream
-            const userVideo = document.getElementById('user-video') as HTMLVideoElement;
-            if (userVideo) {
-                userVideo.srcObject = stream;
-                userVideo.muted = true;
+            if (!this.stream) {
+                throw new Error('No stream available');
             }
 
-            this.stream = stream;
-            this.mediaRecorder = new MediaRecorder(stream, {
+            this.mediaRecorder = new MediaRecorder(this.stream, {
                 mimeType: 'video/webm;codecs=vp8,opus'
             });
             

@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card';
-import { Button } from '../components/ui/button';
-import { Input } from '../components/ui/input';
-import { Trash2, Plus, Save } from 'lucide-react';
+import { createRoot } from 'react-dom/client';
+import { Save, Plus, Trash2, Home } from 'lucide-react';
+import questionsData from './questions.json';
 
 interface Question {
   id: number;
@@ -10,24 +9,26 @@ interface Question {
   duration: number;
 }
 
-const QuestionManager: React.FC = () => {
-  const [questions, setQuestions] = useState<Question[]>([]);
-  const [loading, setLoading] = useState(true);
+const QuestionEditor = () => {
+  const [questions, setQuestions] = useState<Question[]>(questionsData.questions);
   const [saveStatus, setSaveStatus] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const loadQuestions = async () => {
+    try {
+      const response = await fetch('/fs/read?path=src/questions.json');
+      if (!response.ok) {
+        throw new Error('Failed to load questions');
+      }
+      const data = await response.json();
+      const parsedData = JSON.parse(data.content);
+      setQuestions(parsedData.questions);
+    } catch (error) {
+      console.error('Error loading questions:', error);
+    }
+  };
 
   useEffect(() => {
-    const loadQuestions = async () => {
-      try {
-        const response = await window.fs.readFile('src/questions.json', { encoding: 'utf8' });
-        const data = JSON.parse(response);
-        setQuestions(data.questions);
-        setLoading(false);
-      } catch (error) {
-        console.error('Error loading questions:', error);
-        setLoading(false);
-      }
-    };
-
     loadQuestions();
   }, []);
 
@@ -41,7 +42,9 @@ const QuestionManager: React.FC = () => {
   };
 
   const removeQuestion = (id: number) => {
-    setQuestions(questions.filter(q => q.id !== id));
+    if (window.confirm('Are you sure you want to delete this question?')) {
+      setQuestions(questions.filter(q => q.id !== id));
+    }
   };
 
   const updateQuestion = (id: number, field: keyof Question, value: string | number) => {
@@ -58,96 +61,138 @@ const QuestionManager: React.FC = () => {
 
   const saveQuestions = async () => {
     try {
+      setSaving(true);
       setSaveStatus('Saving...');
-      const data = { questions: questions };
+      const data = { questions: [...questions].sort((a, b) => a.id - b.id) };
       const jsonContent = JSON.stringify(data, null, 2);
-      await window.fs.writeFile('src/questions.json', jsonContent);
-      setSaveStatus('Saved successfully!');
-      setTimeout(() => setSaveStatus(''), 3000);
+      console.log('Saving content:', jsonContent);
+
+      const response = await fetch('/fs/write', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          path: 'src/questions.json',
+          content: jsonContent
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to save questions');
+      }
+
+      setSaveStatus('✓ Saved successfully!');
+      console.log('Questions saved successfully');
+      
+      // Reload questions to verify the save
+      await loadQuestions();
     } catch (error) {
       console.error('Error saving questions:', error);
-      setSaveStatus('Error saving questions');
+      setSaveStatus('❌ Error saving questions');
+    } finally {
+      setSaving(false);
       setTimeout(() => setSaveStatus(''), 3000);
     }
   };
 
-  if (loading) {
-    return (
-      <Card className="w-full max-w-4xl mx-auto mt-8">
-        <CardContent className="p-6">
-          <div className="flex items-center justify-center">
-            Loading questions...
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
-
   return (
-    <Card className="w-full max-w-4xl mx-auto mt-8">
-      <CardHeader>
-        <CardTitle className="flex items-center justify-between">
-          <span>Question Manager</span>
-          <div className="flex items-center gap-4">
-            {saveStatus && (
-              <span className={saveStatus.includes('Error') ? 'text-red-500' : 'text-green-500'}>
-                {saveStatus}
-              </span>
-            )}
-            <Button 
-              onClick={saveQuestions}
-              className="bg-green-500 hover:bg-green-600 text-white flex items-center gap-2"
-            >
-              <Save size={16} />
-              Save Changes
-            </Button>
+    <div className="bg-gray-100 min-h-screen">
+      {/* Header */}
+      <div className="bg-white border-b border-gray-200">
+        <div className="max-w-5xl mx-auto px-4 py-6">
+          <div className="flex justify-between items-center">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">Questions Editor</h1>
+              <p className="text-sm text-gray-500 mt-1">{questions.length} questions configured</p>
+            </div>
+            <div className="flex items-center space-x-4">
+              <a href="/" className="px-4 py-2 text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors">
+                Back to App
+              </a>
+              <button
+                onClick={saveQuestions}
+                disabled={saving}
+                className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors flex items-center gap-2"
+              >
+                <Save className="w-5 h-5" />
+                Save Changes
+              </button>
+            </div>
           </div>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {questions.map((question, index) => (
-          <div key={question.id} className="flex items-start gap-4 p-4 bg-gray-50 rounded-lg">
-            <div className="flex-grow space-y-4">
-              <div className="flex items-center gap-2">
-                <span className="font-medium min-w-8">#{question.id}</span>
-                <Input
-                  value={question.text}
-                  onChange={(e) => updateQuestion(question.id, 'text', e.target.value)}
-                  placeholder="Enter question text"
-                  className="flex-grow"
-                />
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-600">Duration (ms):</span>
-                <Input
-                  type="number"
-                  value={question.duration}
-                  onChange={(e) => updateQuestion(question.id, 'duration', e.target.value)}
-                  className="w-32"
-                  min="1000"
-                  step="1000"
-                />
+          {saveStatus && (
+            <div className={`mt-4 p-3 rounded-md ${
+              saveStatus.includes('❌') ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
+            }`}>
+              {saveStatus}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Questions List */}
+      <div className="max-w-5xl mx-auto px-4 py-8">
+        <div className="space-y-6">
+          {questions.map((question) => (
+            <div key={question.id} className="bg-white rounded-lg shadow-sm hover:shadow-md transition-shadow">
+              <div className="p-6">
+                <div className="flex items-start gap-6">
+                  <div className="w-16 h-16 bg-gray-100 rounded-lg flex items-center justify-center">
+                    <span className="text-2xl font-bold text-gray-500">#{question.id}</span>
+                  </div>
+                  <div className="flex-1 space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Question Text
+                      </label>
+                      <textarea
+                        value={question.text}
+                        onChange={(e) => updateQuestion(question.id, 'text', e.target.value)}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-shadow"
+                        rows={3}
+                        placeholder="Enter the question text..."
+                      />
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Duration (ms)
+                        </label>
+                        <input
+                          type="number"
+                          value={question.duration}
+                          onChange={(e) => updateQuestion(question.id, 'duration', e.target.value)}
+                          min="1000"
+                          step="1000"
+                          className="w-48 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-shadow"
+                        />
+                      </div>
+                      <button
+                        onClick={() => removeQuestion(question.id)}
+                        className="mt-6 p-2 text-red-600 hover:bg-red-50 rounded-full transition-colors"
+                        title="Delete question"
+                      >
+                        <Trash2 className="w-5 h-5" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
-            <Button
-              onClick={() => removeQuestion(question.id)}
-              className="bg-red-500 hover:bg-red-600 text-white"
-            >
-              <Trash2 size={16} />
-            </Button>
-          </div>
-        ))}
-        
-        <Button 
+          ))}
+        </div>
+
+        <button
           onClick={addQuestion}
-          className="w-full mt-4 bg-blue-500 hover:bg-blue-600 text-white flex items-center justify-center gap-2"
+          className="mt-8 w-full py-4 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all flex items-center justify-center gap-2"
         >
-          <Plus size={16} />
-          Add New Question
-        </Button>
-      </CardContent>
-    </Card>
+          <Plus className="w-6 h-6" />
+          <span>Add New Question</span>
+        </button>
+      </div>
+    </div>
   );
 };
 
-export default QuestionManager;
+const root = createRoot(document.getElementById('root')!);
+root.render(<QuestionEditor />);
