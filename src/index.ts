@@ -1,7 +1,10 @@
+import React from 'react';
 import { HeygenService } from './services/heygen.service';
 import { AvatarQuality } from '@heygen/streaming-avatar';
 import { RecordingControls } from './components/RecordingControls';
 import questionsJson from './questions.json';
+import { createRoot } from 'react-dom/client';
+import QuestionManager from './components/QuestionManager';
 
 interface Question {
     id: number;
@@ -20,7 +23,6 @@ declare global {
     }
 }
 
-// Make questions available globally for the RecordingControls
 window.questions = questionsJson as QuestionData;
 window.currentQuestionIndex = 0;
 
@@ -213,10 +215,9 @@ async function initializeAvatar() {
             cleanupAvatar();
         };
 
-    } catch (err) {
-        const error = err as Error;
+    } catch (error) {
         console.error('Application error:', error);
-        showError(error.message || 'Failed to initialize avatar');
+        showError(error instanceof Error ? error.message : 'Failed to initialize avatar');
         await cleanupAvatar();
     }
 }
@@ -248,6 +249,35 @@ function init() {
         });
     } else {
         showError('Required buttons not found!');
+    }
+
+    // Setup question manager
+    const manageQuestionsButton = document.getElementById('manage-questions');
+    const questionManagerContainer = document.getElementById('question-manager-container');
+    
+    if (manageQuestionsButton && questionManagerContainer) {
+        // Create a root div for React
+        const rootDiv = document.createElement('div');
+        rootDiv.style.position = 'absolute';
+        rootDiv.style.top = '50%';
+        rootDiv.style.left = '50%';
+        rootDiv.style.transform = 'translate(-50%, -50%)';
+        questionManagerContainer.appendChild(rootDiv);
+        
+        // Create React root
+        const root = createRoot(rootDiv);
+
+        manageQuestionsButton.addEventListener('click', () => {
+            questionManagerContainer.style.display = 'block';
+            root.render(React.createElement(QuestionManager));
+        });
+
+        // Close when clicking outside
+        questionManagerContainer.addEventListener('click', (e) => {
+            if (e.target === questionManagerContainer) {
+                questionManagerContainer.style.display = 'none';
+            }
+        });
     }
 }
 

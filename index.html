@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Heygen Avatar Demo</title>
     <style>
+        /* Keep all existing styles... */
         body {
             margin: 0;
             padding: 20px;
@@ -16,7 +17,7 @@
         }
 
         .left-section, .right-section {
-            width: 640px; /* Fixed width for both sections */
+            width: 640px;
         }
 
         .video-wrapper {
@@ -29,12 +30,12 @@
 
         .avatar-wrapper {
             width: 640px;
-            height: 640px; /* Square aspect ratio for avatar */
+            height: 640px;
         }
 
         .user-wrapper {
             width: 640px;
-            height: 360px; /* 16:9 aspect ratio */
+            height: 360px;
         }
 
         #avatar-video {
@@ -87,6 +88,9 @@
             border-radius: 8px;
             cursor: pointer;
             transition: all 0.2s;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
         }
 
         .control-button:hover:not(:disabled) {
@@ -175,9 +179,20 @@
             border-radius: 50%;
             animation: spin 1s linear infinite;
         }
+
+        #manage-questions {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+        }
     </style>
 </head>
 <body>
+    <a href="/questions.html" id="manage-questions" class="control-button">
+        Manage Questions
+    </a>
+    
     <div class="left-section">
         <div class="video-wrapper avatar-wrapper">
             <video id="avatar-video" autoplay playsinline></video>
@@ -201,6 +216,6 @@
         <button id="confirm-button" class="control-button confirm hidden">Confirm Recording</button>
         <button id="next-button" class="control-button hidden">Next Question</button>
     </div>
-    <script src="/dist/bundle.js"></script>
+    <script src="/dist/main.bundle.js"></script>
 </body>
 </html>
