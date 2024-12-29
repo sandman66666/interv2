@@ -1,5 +1,7 @@
 import { HeygenService } from './services/heygen.service';
 import { AvatarQuality } from '@heygen/streaming-avatar';
+import { RecordingControls } from './components/RecordingControls';
+import questionsJson from './questions.json';
 
 interface Question {
     id: number;
@@ -11,12 +13,21 @@ interface QuestionData {
     questions: Question[];
 }
 
-import questionsJson from './questions.json';
-const questions = questionsJson as QuestionData;
+declare global {
+    interface Window {
+        questions: QuestionData;
+        currentQuestionIndex: number;
+    }
+}
 
-let currentQuestionIndex = 0;
+// Make questions available globally for the RecordingControls
+window.questions = questionsJson as QuestionData;
+window.currentQuestionIndex = 0;
+
 let isAvatarStopped = false;
 let currentHeygenService: HeygenService | null = null;
+let recordingControls: RecordingControls | null = null;
+let isAvatarSpeaking = false;
 
 function addDebugLog(message: string, type: 'error' | 'info' = 'info') {
     const debugLog = document.getElementById('debug-log');
@@ -60,35 +71,55 @@ function showError(message: string) {
     setTimeout(() => container.remove(), 5000);
 }
 
-async function sleep(ms: number) {
-    return new Promise(resolve => setTimeout(resolve, ms));
+function updateButtonStates() {
+    const nextButton = document.getElementById('next-button') as HTMLButtonElement;
+    const recordButton = document.getElementById('record-button') as HTMLButtonElement;
+    
+    if (nextButton && recordButton) {
+        if (isAvatarSpeaking) {
+            nextButton.classList.add('hidden');
+            recordButton.classList.add('hidden');
+        } else {
+            recordButton.classList.remove('hidden');
+            recordButton.disabled = false;
+            nextButton.classList.add('hidden');
+        }
+    }
 }
 
 async function playNextQuestion() {
     const nextButton = document.getElementById('next-button') as HTMLButtonElement;
+    const recordButton = document.getElementById('record-button') as HTMLButtonElement;
+    
     if (!currentHeygenService || isAvatarStopped) return;
 
     try {
+        nextButton.classList.add('hidden');
+        recordButton.classList.add('hidden');
         nextButton.disabled = true;
         
-        if (currentQuestionIndex < questions.questions.length) {
-            const question = questions.questions[currentQuestionIndex];
+        if (window.currentQuestionIndex < window.questions.questions.length) {
+            const question = window.questions.questions[window.currentQuestionIndex];
             addDebugLog(`Playing question ${question.id}: ${question.text}`);
+            
+            isAvatarSpeaking = true;
+            updateButtonStates();
+            
             await currentHeygenService.speak(question.text);
-            currentQuestionIndex++;
+            
+            isAvatarSpeaking = false;
+            window.currentQuestionIndex++;
 
-            // Enable next button if there are more questions
-            if (currentQuestionIndex < questions.questions.length) {
-                nextButton.disabled = false;
+            if (window.currentQuestionIndex < window.questions.questions.length) {
+                updateButtonStates();
             } else {
-                // No more questions, start cleanup
-                nextButton.style.display = 'none';
                 await cleanupAvatar();
             }
         }
     } catch (error) {
         console.error('Error playing question:', error);
-        nextButton.disabled = false;
+        isAvatarSpeaking = false;
+        updateButtonStates();
     }
 }
 
@@ -96,6 +127,7 @@ async function cleanupAvatar() {
     if (currentHeygenService) {
         try {
             isAvatarStopped = true;
+            isAvatarSpeaking = false;
             addDebugLog('Starting cleanup...');
             await currentHeygenService.cleanup();
             currentHeygenService = null;
@@ -103,17 +135,21 @@ async function cleanupAvatar() {
 
             const startButton = document.getElementById('start-button') as HTMLButtonElement;
             const nextButton = document.getElementById('next-button') as HTMLButtonElement;
+            const recordButton = document.getElementById('record-button') as HTMLButtonElement;
+            
             if (startButton) {
                 startButton.classList.remove('hidden');
                 startButton.disabled = false;
                 startButton.classList.remove('loading');
             }
             if (nextButton) {
-                nextButton.style.display = 'none';
+                nextButton.classList.add('hidden');
+            }
+            if (recordButton) {
+                recordButton.classList.add('hidden');
             }
         } catch (error) {
             console.error('Cleanup error:', error);
-            // Continue with UI cleanup even if service cleanup fails
             currentHeygenService = null;
         }
     }
@@ -123,15 +159,16 @@ async function initializeAvatar() {
     const videoElement = document.getElementById('avatar-video') as HTMLVideoElement;
     const startButton = document.getElementById('start-button') as HTMLButtonElement;
     const nextButton = document.getElementById('next-button') as HTMLButtonElement;
+    const recordButton = document.getElementById('record-button') as HTMLButtonElement;
     
-    if (!videoElement || !startButton || !nextButton) {
+    if (!videoElement || !startButton || !nextButton || !recordButton) {
         showError('Required elements not found!');
         return;
     }
 
-    // Reset state
     isAvatarStopped = false;
-    currentQuestionIndex = 0;
+    isAvatarSpeaking = false;
+    window.currentQuestionIndex = 0;
 
     try {
         addDebugLog('Creating HeygenService...');
@@ -154,11 +191,14 @@ async function initializeAvatar() {
                 addDebugLog('Video playing successfully');
                 startButton.classList.add('hidden');
                 
-                // Show and enable next button
-                nextButton.style.display = 'block';
-                nextButton.disabled = false;
+                recordButton.classList.add('hidden');
+                nextButton.classList.add('hidden');
                 
-                // Start with first question
+                // Initialize user video stream
+                if (recordingControls) {
+                    recordingControls.initializeUserVideo();
+                }
+                
                 await playNextQuestion();
             } catch (error) {
                 console.error('Error playing video:', error);
@@ -181,17 +221,19 @@ async function initializeAvatar() {
     }
 }
 
-// Cleanup on page unload
 window.addEventListener('beforeunload', cleanupAvatar);
 
-// Initialize application
 function init() {
     addDebugLog('Application ready...');
     
     const startButton = document.getElementById('start-button') as HTMLButtonElement;
     const nextButton = document.getElementById('next-button') as HTMLButtonElement;
+    const recordButton = document.getElementById('record-button') as HTMLButtonElement;
     
-    if (startButton && nextButton) {
+    if (startButton && nextButton && recordButton) {
+        recordingControls = new RecordingControls();
+        recordingControls.attachToNextButton();
+
         startButton.addEventListener('click', async () => {
             startButton.disabled = true;
             startButton.classList.add('loading');
@@ -200,7 +242,7 @@ function init() {
         });
 
         nextButton.addEventListener('click', async () => {
-            if (!nextButton.disabled) {
+            if (!nextButton.disabled && !isAvatarSpeaking) {
                 await playNextQuestion();
             }
         });
@@ -209,5 +251,4 @@ function init() {
     }
 }
 
-// Start the application
 init();
